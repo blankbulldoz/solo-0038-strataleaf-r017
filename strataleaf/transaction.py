@@ -5,6 +5,7 @@ from .errors import Conflict, InvalidDocument, NotFound
 from .indexes import refresh_document
 from .mvcc import latest_row
 from .schema import validate_document
+from .views import maintain_views
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,7 @@ class WriteBatch:
                     connection.execute("INSERT INTO versions VALUES (?,?,?,?,?)",
                                        (op["collection"], op["key"], revision, body, op["expires_at"]))
                     refresh_document(connection, op["collection"], op["key"], op["document"])
+                maintain_views(connection, self.operations, revision)
                 payload = {"revision": revision, "operations": self.operations}
                 connection.execute("INSERT INTO commits VALUES (?,?,?,?)",
                                    (revision, dumps(payload), self.request_key, fingerprint))

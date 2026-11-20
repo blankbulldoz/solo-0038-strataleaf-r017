@@ -2,7 +2,9 @@
 
 备份必须调用 archives.backup，不能只拷贝活动主文件。backup 与 restore 都不覆盖存在目标；恢复使用新路径，先校验来源 SHA-256，再打开新句柄。主库恢复生成新身份，副本恢复绑定来源。恢复清理原机保留点与消费者；消费方重新注册时须根据已恢复的 floor/head 判断是否需要重建。
 
-diagnostics.inspect(deep=True) 检查 SQLite 完整性、外键、提交连续性、当前索引与文档投影；fingerprint 比较指定读视图的键、文档版本、内容及到期事实。前者不能证明所有业务数据正确，后者相同也不能代替模式与索引定义比对。checkpoint 返回 SQLite 的 busy、log、checkpointed 信息，并不承诺截断 WAL。
+diagnostics.inspect(deep=True) 检查 SQLite 完整性、外键、提交连续性、当前索引与文档投影，并重算聚合视图的成员与计数；fingerprint 比较指定读视图的键、文档版本、内容及到期事实。前者不能证明所有业务数据正确，后者相同也不能代替模式与索引定义比对。checkpoint 返回 SQLite 的 busy、log、checkpointed 信息，并不承诺截断 WAL。
+
+聚合视图的创建与重建是单个写事务，与建立索引同级；期间其他句柄的读取看到完整的旧快照，同句柄操作串行等待，不会观察到部分建基的分组。views.read 返回的 revision 是结果对应的修订：主库上它与当次读到的 head 一致，副本上反映最近应用的追赶包末端，恢复自备份的库反映备份时刻的 head；调用方可据此把视图结果与同一修订的历史读取对齐。模式演进不使视图失效，分组与度量按字段路径继续解释，新模式下缺失该路径的文档自然退出分组；字段语义改变时应 drop 后重建。深度检查发现成员或计数偏差时，views.rebuild 在当前 head 原子重新建基。
 
 examples.observations 的 contention 会让独立连接暂持 IMMEDIATE 锁，记录第二句柄的 busy 超时及释放后的成功；retention_pressure 记录读保留点和消费者分别阻止水位推进的现象。它们用独立临时文件，不接触生产路径。观察包含真实修订和异常，适合复核运行边界。
 

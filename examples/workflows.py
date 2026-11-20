@@ -2,7 +2,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from strataleaf import Database, Archives, Conflict, InvalidDocument, InvalidCursor, ReadOnly, SnapshotTooOld, ReplicationError
+from strataleaf import Database, Archives, Conflict, InvalidDocument, InvalidCursor, NotFound, ReadOnly, SnapshotTooOld, ReplicationError
 
 SCHEMA = {"fields": {"region": "string", "sequence": "integer", "code": "string"}, "required": ["region", "sequence"]}
 
@@ -128,6 +128,27 @@ def run(flow):
                 if sum(item["count"] for item in output["groups"]) != 6:
                     raise RuntimeError("aggregation lost visible documents")
                 output["invalid"] = rejected(lambda: db.aggregates.group("unknown", "region"), Exception)
+            elif flow == "views":
+                db.views.create("region_rollup", "segments", "region", "sequence")
+                moved = db.batch("move_segment").put("segments", "seg_00", {"region": "west", "sequence": 6, "code": "c0"}, expected=first).commit()
+                replayed = db.batch("move_segment").put("segments", "seg_00", {"region": "west", "sequence": 6, "code": "c0"}, expected=first).commit()
+                db.batch().delete("segments", "seg_01", expected=first).commit()
+                db.batch().put("segments", "timed", {"region": "east", "sequence": 9, "code": "ct"}, expires_at=100).commit()
+                swept = db.retention.sweep(100)
+                reading = db.views.read("region_rollup")
+                fresh = db.aggregates.group("segments", "region", "sequence")
+                if reading["groups"] != fresh["groups"] or reading["revision"] != db.revision or not replayed.replayed:
+                    raise RuntimeError("persistent view diverged from on-the-fly aggregation")
+                with Database(folder / "source.db") as reopened:
+                    reread = reopened.views.read("region_rollup")
+                if reread != reading:
+                    raise RuntimeError("reopening the database changed view contents")
+                definition = db.views.describe("region_rollup")
+                duplicate = rejected(lambda: db.views.create("region_rollup", "segments", "region"), Conflict)
+                db.views.drop("region_rollup")
+                output = {"moved": moved.__dict__, "replayed": replayed.__dict__, "swept": swept, "reading": reading,
+                          "reopened_revision": reread["revision"], "definition": definition, "duplicate": duplicate,
+                          "after_drop": rejected(lambda: db.views.read("region_rollup"), NotFound)}
             elif flow == "patch":
                 result = db.patch("segments", "seg_00", {"code": None, "detail": {"block": 4}}, expected=first)
                 output = {"patch": result.__dict__, "document": db.get("segments", "seg_00").document,

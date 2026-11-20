@@ -2,6 +2,7 @@ from .codec import digest, dumps, loads
 from .errors import Conflict, ReplicationError
 from .indexes import refresh_document
 from .mvcc import checked_revision
+from .views import maintain_views
 
 
 class Replication:
@@ -55,6 +56,7 @@ class Replication:
                         document = operation["document"]
                         connection.execute("INSERT INTO versions VALUES (?,?,?,?,?)", (operation["collection"], operation["key"], revision,
                             dumps(document) if document is not None else None, operation["expires_at"]))
+                    maintain_views(connection, commit["operations"], revision)
                     connection.execute("INSERT INTO commits(rev,payload) VALUES (?,?)", (revision, dumps(commit)))
                     applied += 1
                 self.store.set("head", body["through"])

@@ -4,6 +4,38 @@ from .mvcc import checked_revision, visible_rows
 from .predicates import matches, validate_predicate
 
 
+def contribution(document, by, measure, predicate):
+    """Map a document to (group token, numeric measure or None), or None if it contributes nothing."""
+    if not matches(document, predicate):
+        return None
+    value = field(document, by)
+    if value is MISSING:
+        return None
+    number = field(document, measure) if measure is not None else MISSING
+    if not isinstance(number, (int, float)) or isinstance(number, bool):
+        number = None
+    return dumps(value), number
+
+
+def empty_cell():
+    return {"count": 0, "numeric_count": 0, "sum": 0, "min": None, "max": None}
+
+
+def add_to_cell(cell, measure):
+    cell["count"] += 1
+    if measure is None:
+        return
+    cell["numeric_count"] += 1
+    cell["sum"] += measure
+    cell["min"] = measure if cell["min"] is None else min(cell["min"], measure)
+    cell["max"] = measure if cell["max"] is None else max(cell["max"], measure)
+
+
+def finish_cell(cell):
+    cell["average"] = cell["sum"] / cell["numeric_count"] if cell["numeric_count"] else None
+    return cell
+
+
 class Aggregates:
     def __init__(self, store):
         self.store = store
@@ -19,24 +51,13 @@ class Aggregates:
                 raise NotFound("unknown collection")
             groups = {}
             for row in visible_rows(connection, collection, revision):
-                document = loads(row["body"])
-                if not matches(document, predicate):
+                result = contribution(loads(row["body"]), by, measure, predicate)
+                if result is None:
                     continue
-                value = field(document, by)
-                if value is MISSING:
-                    continue
-                token = dumps(value)
-                item = groups.setdefault(token, {"key": value, "count": 0, "numeric_count": 0, "sum": 0, "min": None, "max": None})
-                item["count"] += 1
-                number = field(document, measure) if measure is not None else MISSING
-                if isinstance(number, (int, float)) and not isinstance(number, bool):
-                    item["numeric_count"] += 1
-                    item["sum"] += number
-                    item["min"] = number if item["min"] is None else min(item["min"], number)
-                    item["max"] = number if item["max"] is None else max(item["max"], number)
+                token, number = result
+                item = groups.setdefault(token, {"key": loads(token), **empty_cell()})
+                add_to_cell(item, number)
             output = []
             for token in sorted(groups):
-                item = groups[token]
-                item["average"] = item["sum"] / item["numeric_count"] if item["numeric_count"] else None
-                output.append(item)
+                output.append(finish_cell(groups[token]))
             return {"revision": revision, "groups": output}

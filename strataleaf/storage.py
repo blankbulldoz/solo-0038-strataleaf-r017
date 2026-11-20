@@ -24,6 +24,17 @@ CREATE TABLE IF NOT EXISTS index_values (
 CREATE INDEX IF NOT EXISTS index_document ON index_values(collection,key);
 CREATE TABLE IF NOT EXISTS pins (name TEXT PRIMARY KEY, rev INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS consumers (name TEXT PRIMARY KEY, ack INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS aggregate_view_defs (
+ name TEXT PRIMARY KEY, collection TEXT NOT NULL, by_path TEXT NOT NULL, measure_path TEXT,
+ predicate TEXT, applied_rev INTEGER NOT NULL, FOREIGN KEY(collection) REFERENCES collections(name));
+CREATE TABLE IF NOT EXISTS aggregate_view_cells (
+ view TEXT NOT NULL, token TEXT NOT NULL, count INTEGER NOT NULL, numeric_count INTEGER NOT NULL,
+ sum_json TEXT NOT NULL, min_json TEXT, max_json TEXT,
+ PRIMARY KEY(view,token), FOREIGN KEY(view) REFERENCES aggregate_view_defs(name) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS aggregate_view_members (
+ view TEXT NOT NULL, key TEXT NOT NULL, token TEXT NOT NULL, measure_json TEXT,
+ PRIMARY KEY(view,key), FOREIGN KEY(view) REFERENCES aggregate_view_defs(name) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS aggregate_member_group ON aggregate_view_members(view,token);
 """
 
 

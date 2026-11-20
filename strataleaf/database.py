@@ -12,6 +12,7 @@ from .retention import Retention
 from .storage import Storage
 from .transaction import WriteBatch
 from .transfer import Transfer
+from .views import AggregateViews
 
 
 class Database:
@@ -25,6 +26,7 @@ class Database:
         self.archives = Archives(self._store)
         self.replication = Replication(self._store)
         self.aggregates = Aggregates(self._store)
+        self.views = AggregateViews(self._store)
         self.transfer = Transfer(self._store)
         self.diagnostics = Diagnostics(self._store)
         self._queries = QueryEngine(self._store)

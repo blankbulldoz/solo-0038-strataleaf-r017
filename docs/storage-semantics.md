@@ -1,6 +1,8 @@
 # 数据与兼容边界
 
-物理表包括 meta、collections、versions、commits、receipts、index_defs、index_values、pins、consumers。versions 的主键为集合、键、修订；body 的 SQL NULL 表示删除，JSON null 只能作为文档字段。collections 保存当前模式；index_values 是当前 head 的投影。commits 保存完整的操作序列；receipts 保存不受历史回收影响的请求摘要与结果。幂等键不能被不同操作复用，回放不重新执行前置条件。
+物理表包括 meta、collections、versions、commits、receipts、index_defs、index_values、pins、consumers、aggregate_view_defs、aggregate_view_cells、aggregate_view_members。versions 的主键为集合、键、修订；body 的 SQL NULL 表示删除，JSON null 只能作为文档字段。collections 保存当前模式；index_values 是当前 head 的投影。commits 保存完整的操作序列；receipts 保存不受历史回收影响的请求摘要与结果。幂等键不能被不同操作复用，回放不重新执行前置条件。
+
+聚合视图定义在 aggregate_view_defs（集合、分组路径、可选度量路径、可选谓词、已应用修订），分组合计在 aggregate_view_cells，每个文档当前的贡献投影在 aggregate_view_members。成员投影是撤销旧贡献的依据：更新先按成员表撤销旧分组与度量再计入新值，删除与到期清理只撤销贡献。cells 的 count 与 numeric_count 精确维护；min/max 在移除等于当前边界的度量时从同组剩余成员重算；sum 对整数度量精确，对浮点度量是增量结果，与一次性扫描可能存在末位差异，rebuild 可重新建基。视图维护与文档提交同属一个 IMMEDIATE 事务，提交回滚则视图不变；幂等回执回放与副本重复范围不触发维护，因此重开数据库或重复处理提交不会让计数漂移。就绪视图的 applied_rev 始终等于所属数据库的 head；视图定义不随副本包传播，从备份初始化的副本会继续维护已存在的视图。
 
 floor 是仍可读取的最早修订，不代表每条物理版本的最小修订；每个键在 floor 之前的最后版本可能是构造 floor 读视图的基准，必须保留。commits 仅需保存大于 floor 的提交，消费者从自己的 ack 之后读取。pin 与消费者位置不能低于现存 floor。
 
